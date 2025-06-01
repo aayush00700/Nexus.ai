@@ -1,0 +1,70 @@
+#root {
+  max-width: 1280px;    /* max width for large screens */
+  width: 90vw;          /* width scales relative to viewport */
+  margin: 0 auto;
+  padding: 2rem 1rem;   /* padding with horizontal space */
+  text-align: center;
+  background-color: red;
+  box-sizing: border-box; /* ensure padding included in width */
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms ease-in-out;
+  cursor: pointer;
+  -webkit-filter: drop-shadow(0 0 2em #646cffaa);
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+
+/* Hover/focus/active states for both desktop and touch devices */
+.logo:hover,
+.logo:focus,
+.logo:active {
+  -webkit-filter: drop-shadow(0 0 2em #646cffaa);
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+
+.logo.react:hover,
+.logo.react:focus,
+.logo.react:active {
+  -webkit-filter: drop-shadow(0 0 2em #61dafbaa);
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Only animate on devices with hover & fine pointer (desktop) */
+  @media (hover: hover) and (pointer: fine) {
+    a:nth-of-type(2) .logo {
+      animation: logo-spin infinite 20s linear;
+    }
+  }
+}
+
+/* Responsive adjustments for small/mobile screens */
+@media (max-width: 600px) {
+  #root {
+    padding: 1rem 0.5rem;
+  }
+  .logo {
+    height: 4em;
+    padding: 1em;
+  }
+}
+
+/* Style for the "read-the-docs" text */
+.read-the-docs {
+  color: #888;
+  font-size: 0.9rem;
+  user-select: none;
+}
