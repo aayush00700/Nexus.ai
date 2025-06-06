@@ -1,8 +1,111 @@
 import React, { useState } from "react";
 
-export default function Premium() {
+export default function Premium({ userId, onUpgradeSuccess }) {
   const [isOpen, setIsOpen] = useState(true);
+
   if (!isOpen) return null;
+
+  // Load Razorpay script dynamically
+  const loadRazorpayScript = () =>
+    new Promise((resolve) => {
+      if (document.getElementById("razorpay-script")) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.id = "razorpay-script";
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+
+  const handleSubscribe = async () => {
+    const res = await loadRazorpayScript();
+    if (!res) {
+      alert("Failed to load Razorpay SDK. Please check your connection.");
+      return;
+    }
+
+    try {
+      // Create order on backend
+      const orderRes = await fetch("http://localhost:5000/create_order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      const orderData = await orderRes.json();
+      if (!orderData.order_id) {
+        alert("Failed to create order. Try again later.");
+        return;
+      }
+
+      const options = {
+        key: "YOUR_KEY_ID", // Replace with your Razorpay key id
+        amount: 4000 * 100, // Amount in smallest currency unit
+        currency: "INR",
+        name: "Nexus Premium",
+        description: "Premium subscription for Nexus",
+        order_id: orderData.order_id,
+        handler: async function (response) {
+          // Send payment verification to backend
+          const verifyRes = await fetch(
+            "http://localhost:5000/verify_payment",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                user_id: userId,
+                payment_id: response.razorpay_payment_id,
+                order_id: response.razorpay_order_id,
+                signature: response.razorpay_signature,
+              }),
+            }
+          );
+          const verifyData = await verifyRes.json();
+          if (verifyData.success) {
+            alert("Payment successful! You are now a premium member.");
+            setIsOpen(false);
+            if (onUpgradeSuccess) onUpgradeSuccess();
+          } else {
+            alert("Payment verification failed.");
+          }
+        },
+        theme: {
+          color: "#b721ff",
+        },
+        modal: {
+          // Lock amount, no editing
+          ondismiss: () => {
+            alert("Payment popup closed.");
+          },
+        },
+        prefill: {
+          // Optional: prefill user info if you want
+          // name: "User Name",
+          // email: "user@example.com",
+          // contact: "9999999999",
+        },
+        notes: {
+          user_id: userId,
+        },
+        method: {
+          // Limit payment methods - card or upi
+          netbanking: false,
+          card: true,
+          upi: true,
+          wallet: false,
+          emi: false,
+          paylater: false,
+        },
+      };
+
+      const paymentObject = new window.Razorpay(options);
+      paymentObject.open();
+    } catch (error) {
+      alert("Something went wrong: " + error.message);
+    }
+  };
 
   const styles = {
     overlay: {
@@ -24,17 +127,17 @@ export default function Premium() {
       padding: "2.5rem",
       borderRadius: "1.5rem",
       width: "90%",
-      height: "80%",  
+      height: "80%",
       maxWidth: "700px",
-      maxHeight: "90vh", // ✅ NEW: limits card height
-      overflowY: "auto",  // ✅ NEW: adds vertical scroll when needed
+      maxHeight: "90vh",
+      overflowY: "auto",
       color: "#fff",
       fontFamily: "'Poppins', sans-serif",
       boxShadow: "0 0 40px rgba(9, 181, 255, 0.3), 0 0 20px rgba(255, 0, 150, 0.3)",
       border: "2px solid",
       borderImage: "linear-gradient(to right, #09b5ff, #b721ff, #f13463) 1",
-      scrollbarWidth: "none",       // Firefox
-      msOverflowStyle: "none", 
+      scrollbarWidth: "none",
+      msOverflowStyle: "none",
     },
     closeButton: {
       position: "absolute",
@@ -60,11 +163,6 @@ export default function Premium() {
       fontSize: "1.25rem",
       marginTop: "1rem",
     },
-    text: {
-      fontSize: "1rem",
-      lineHeight: "1.6",
-      color: "#ccc",
-    },
     plans: {
       display: "flex",
       flexDirection: "column",
@@ -81,24 +179,6 @@ export default function Premium() {
       boxShadow: "0 0 10px rgba(255,255,255,0.05)",
     },
     features1: {
-      padding: "1rem",
-      backgroundColor: "#1a1a1a",
-      borderRadius: "0.1rem",
-      color: "#eee",
-      fontSize: "0.95rem",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "flex-start",
-      justifyContent: "flex-start",
-    },
-    pricing2: {
-      padding: "1rem",
-      backgroundColor: "#222",
-      borderRadius: "0.1rem",
-      color: "#fff",
-      boxShadow: "0 0 10px rgba(255,255,255,0.05)",
-    },
-    features2: {
       padding: "1rem",
       backgroundColor: "#1a1a1a",
       borderRadius: "0.1rem",
@@ -151,7 +231,6 @@ export default function Premium() {
                   cursor: "pointer",
                 }}
                 onClick={() => {
-                  // Handle free plan action
                   alert("Free plan activated!");
                 }}
               >
@@ -159,27 +238,35 @@ export default function Premium() {
               </button>
             </div>
             <div style={styles.features1}>
-              <p style={{
-                fontWeight: "bold",
-                fontFamily: "'Poppins', sans-serif",
-                fontSize: "1.1rem",
-              }}><strong>Includes:</strong></p>
+              <p
+                style={{
+                  fontWeight: "bold",
+                  fontFamily: "'Poppins', sans-serif",
+                  fontSize: "1.1rem",
+                }}
+              >
+                <strong>Includes:</strong>
+              </p>
               <p>1. Private Workspace</p>
               <p>2. Be a member</p>
-              <p style={{
-                fontWeight: "bold",
-                fontFamily: "'Poppins', sans-serif",
-                fontSize: "0.95rem",
-              }}><strong>Key Features:</strong></p>
+              <p
+                style={{
+                  fontWeight: "bold",
+                  fontFamily: "'Poppins', sans-serif",
+                  fontSize: "0.95rem",
+                }}
+              >
+                <strong>Key Features:</strong>
+              </p>
               <p>1. AI generated clips</p>
               <p>2. Export videos in 720p</p>
             </div>
           </div>
           <div style={styles.plans}>
             <p style={styles.sectionTitle}>🔥 Creator Plan</p>
-            <div style={styles.pricing2}>
-              <p style={{fontSize:"25px"}}>Premium Plan</p>
-              <p style={{ fontSize: "2rem", fontWeight: "bold", }}>$40/month</p>
+            <div style={styles.pricing1}>
+              <p style={{ fontSize: "25px" }}>Premium Plan</p>
+              <p style={{ fontSize: "2rem", fontWeight: "bold" }}>$40/month</p>
               <button
                 style={{
                   width: "100%",
@@ -193,24 +280,32 @@ export default function Premium() {
                   fontWeight: "bold",
                   cursor: "pointer",
                 }}
+                onClick={handleSubscribe}
               >
                 Subscribe
               </button>
             </div>
-            <div style={styles.features2}>
-              <p style={{
-                fontWeight: "bold",
-                fontFamily: "'Poppins', sans-serif",
-                fontSize: "1.1rem",
-              }}><strong>Includes:</strong></p>
+            <div style={styles.features1}>
+              <p
+                style={{
+                  fontWeight: "bold",
+                  fontFamily: "'Poppins', sans-serif",
+                  fontSize: "1.1rem",
+                }}
+              >
+                <strong>Includes:</strong>
+              </p>
               <p>1. Private Workspace</p>
-              <p>2. 1080p </p>
-              <p style={{
-                fontWeight: "bold",
-                fontFamily: "'Poppins', sans-serif",
-                fontSize: "0.95rem",
-              }}
-              ><strong>Key Features:</strong></p>
+              <p>2. 1080p Export</p>
+              <p
+                style={{
+                  fontWeight: "bold",
+                  fontFamily: "'Poppins', sans-serif",
+                  fontSize: "0.95rem",
+                }}
+              >
+                <strong>Key Features:</strong>
+              </p>
               <p>1. No watermark</p>
               <p>2. Unlimited Videos</p>
               <p>3. Bulk export of clips</p>

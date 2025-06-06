@@ -22,12 +22,12 @@ app = Flask(__name__)
 CORS(app)
 
 # Email setup
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 587
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'erenyeager545w@gmail.com'         # replace
-app.config['MAIL_PASSWORD'] = 'rpwapzhbyesmwmtu'  # replace
-app.config['MAIL_DEFAULT_SENDER'] = 'your_email@gmail.com'   # replace
+app.config['MAIL_SERVER'] = os.getenv("MAIL_SERVER")
+app.config['MAIL_PORT'] = os.getenv("MAIL_PORT")
+app.config['MAIL_USE_TLS'] = os.getenv("MAIL_USE_TLS")
+app.config['MAIL_USERNAME'] = os.getenv("MAIL_USERNAME")
+app.config['MAIL_PASSWORD'] = os.getenv("MAIL_PASSWORD")
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv("MAIL_DEFAULT_SENDER")
 
 mail = Mail(app)
 
@@ -164,46 +164,96 @@ def verify_otp():
     else:
         return jsonify({'error': 'Invalid OTP'}), 400
 
-
 razorpay_client = razorpay.Client(auth=("YOUR_KEY_ID", "YOUR_KEY_SECRET"))
 
-@app.route('/create_order', methods=['POST'])
+# ========== Razorpay Setup ==========
+RAZORPAY_KEY_ID = "YOUR_KEY_ID"
+RAZORPAY_KEY_SECRET = "YOUR_KEY_SECRET"
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+
+# ========== Credits & Premium Storage (simple JSON) ==========
+# In production use DB like Firebase or SQL
+USERS_FILE = "users.json"
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "w") as f:
+            json.dump({}, f)
+    with open(USERS_FILE, "r") as f:
+        return json.load(f)
+
+def save_users(data):
+    with open(USERS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+def upgrade_user_premium(user_id):
+    users = load_users()
+    if user_id not in users:
+        users[user_id] = {}
+    users[user_id]["is_premium"] = True
+    users[user_id]["credits"] = "unlimited"
+    save_users(users)
+
+def is_user_premium(user_id):
+    users = load_users()
+    return users.get(user_id, {}).get("is_premium", False)
+
+# ========== Razorpay Order Creation ==========
+@app.route("/create_order", methods=["POST"])
 def create_order():
+    data = request.get_json()
+    user_id = data.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
+    amount_in_rupees = 4000  # Rs 4000 = ~$40 (adjust if needed)
+    amount_in_paisa = amount_in_rupees * 100
+
     try:
-        amount = 4000 * 100  # Amount in smallest unit (cents or paisa)
-        currency = "USD"
-        receipt_id = "receipt_001"
-
-        order = razorpay_client.order.create(dict(
-            amount=amount,
-            currency=currency,
-            receipt=receipt_id,
-            payment_capture=1
-        ))
-
+        order = razorpay_client.order.create(
+            dict(amount=amount_in_paisa, currency="INR", receipt=f"receipt_{user_id}", payment_capture=1)
+        )
         return jsonify({"order_id": order["id"]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/upgrade_user', methods=['POST'])
-def upgrade_user():
+# ========== Razorpay Payment Verification ==========
+@app.route("/verify_payment", methods=["POST"])
+def verify_payment():
     data = request.get_json()
-    uid = data.get("uid")
-    payment_id = data.get("payment_id")
+    user_id = data.get("user_id")
+    razorpay_payment_id = data.get("payment_id")
+    razorpay_order_id = data.get("order_id")
+    razorpay_signature = data.get("signature")
 
-    if not uid or not payment_id:
-        return jsonify({"error": "Missing data"}), 400
+    if not all([user_id, razorpay_payment_id, razorpay_order_id, razorpay_signature]):
+        return jsonify({"success": False, "error": "Missing payment data"}), 400
 
-    try:
-        db.collection("users").document(uid).update({
-            "is_premium": True,
-            "payment_id": payment_id,
-        })
-        return jsonify({"message": "User upgraded successfully"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Verify signature using HMAC SHA256
+    generated_signature = hmac.new(
+        bytes(RAZORPAY_KEY_SECRET, "utf-8"),
+        msg=bytes(f"{razorpay_order_id}|{razorpay_payment_id}", "utf-8"),
+        digestmod=hashlib.sha256,
+    ).hexdigest()
 
+    if generated_signature != razorpay_signature:
+        return jsonify({"success": False, "error": "Invalid signature"}), 400
 
+    # Signature valid -> upgrade user
+    upgrade_user_premium(user_id)
 
-if __name__ == '__main__':
+    return jsonify({"success": True, "message": "User upgraded to premium"})
+
+# ========== Example endpoint to check user credits/premium ==========
+@app.route("/user_status/<user_id>", methods=["GET"])
+def user_status(user_id):
+    premium = is_user_premium(user_id)
+    users = load_users()
+    credits = users.get(user_id, {}).get("credits", 0)
+    return jsonify({"user_id": user_id, "is_premium": premium, "credits": credits})
+
+# ========== Existing clip generation and other endpoints here ==========
+# (You can merge your existing APIs from your server here)
+
+if __name__ == "__main__":
     app.run(debug=True)
